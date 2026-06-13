@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anki for Glasses</title>
+<style>
+  body { font-family: system-ui; background:#000; color:#fff; margin:0; padding:16px; font-size:18px; }
+  .card { border:1px solid #444; border-radius:12px; padding:16px; min-height:200px; }
+  .q { font-size:20px; margin-bottom:12px; }
+  .a { font-size:18px; color:#0f0; margin-top:12px; display:none; }
+  .btns { display:flex; gap:8px; margin-top:16px; }
+  button { flex:1; padding:12px; font-size:16px; border-radius:8px; border:none; background:#222; color:#fff; }
+  button:active { background:#444; }
+  .again { background:#600; }
+  .hard { background:#640; }
+  .good { background:#060; }
+  .easy { background:#006; }
+  select { width:100%; padding:10px; font-size:16px; margin-bottom:12px; background:#222; color:#fff; border:1px solid #444; border-radius:8px; }
+  .meta { font-size:14px; color:#888; margin-bottom:8px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+
+<div id="picker">
+  <h3>Select Deck</h3>
+  <select id="deckSelect"><option>Loading...</option></select>
+  <button onclick="startStudy()">Start</button>
+</div>
+
+<div id="study" class="hidden">
+  <div class="meta"><span id="deckName"></span> • <span id="remaining"></span></div>
+  <div class="card">
+    <div class="q" id="q">Loading...</div>
+    <div class="a" id="a"></div>
+  </div>
+  <div class="btns" id="showBtn">
+    <button onclick="showAnswer()">Show Answer</button>
+  </div>
+  <div class="btns hidden" id="gradeBtns">
+    <button class="again" onclick="grade(1)">Again</button>
+    <button class="hard" onclick="grade(2)">Hard</button>
+    <button class="good" onclick="grade(3)">Good</button>
+    <button class="easy" onclick="grade(4)">Easy</button>
+  </div>
+</div>
+
+<script>
+const RELAY_URL = 'https://glowworm-font-founding.ngrok-free.dev';
+let currentDeck = '';
+let currentCard = null;
+let shown = false;
+
+async function loadDecks() {
+  try {
+    const res = await fetch(`${RELAY_URL}/decks`);
+    const decks = await res.json();
+    const sel = document.getElementById('deckSelect');
+    sel.innerHTML = '';
+    if (!decks.length) {
+      sel.innerHTML = '<option>No decks with due cards</option>';
+      return;
+    }
+    decks.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.name;
+      opt.textContent = `${d.name} (${d.due} due)`;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    document.getElementById('deckSelect').innerHTML = '<option>Error loading decks</option>';
+    console.error(e);
+  }
+}
+
+function startStudy() {
+  currentDeck = document.getElementById('deckSelect').value;
+  if (!currentDeck || currentDeck.includes('No decks') || currentDeck.includes('Error')) return;
+  document.getElementById('picker').classList.add('hidden');
+  document.getElementById('study').classList.remove('hidden');
+  document.getElementById('deckName').textContent = currentDeck;
+  nextCard();
+}
+
+async function nextCard() {
+  shown = false;
+  document.getElementById('a').style.display = 'none';
+  document.getElementById('showBtn').classList.remove('hidden');
+  document.getElementById('gradeBtns').classList.add('hidden');
+  document.getElementById('q').textContent = 'Loading...';
+  
+  try {
+    const res = await fetch(`${RELAY_URL}/next?deck=${encodeURIComponent(currentDeck)}`);
+    const data = await res.json();
+    if (data.done) {
+      document.getElementById('q').textContent = 'All done! 🎉';
+      document.getElementById('remaining').textContent = '0 left';
+      document.getElementById('showBtn').classList.add('hidden');
+      return;
+    }
+    currentCard = data;
+    document.getElementById('q').innerHTML = data.question;
+    document.getElementById('a').innerHTML = data.answer;
+    document.getElementById('remaining').textContent = 'Card loaded';
+  } catch (e) {
+    document.getElementById('q').textContent = 'Error: ' + e.message;
+  }
+}
+
+function showAnswer() {
+  if (!currentCard) return;
+  shown = true;
+  document.getElementById('a').style.display = 'block';
+  document.getElementById('showBtn').classList.add('hidden');
+  document.getElementById('gradeBtns').classList.remove('hidden');
+}
+
+async function grade(ease) {
+  if (!currentCard || !shown) return;
+  try {
+    await fetch(`${RELAY_URL}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId: currentCard.cardId, ease })
+    });
+    nextCard();
+  } catch (e) {
+    document.getElementById('q').textContent = 'Error: ' + e.message;
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (document.getElementById('study').classList.contains('hidden')) return;
+  if (e.key === 'Enter' && !shown) showAnswer();
+  else if (shown) {
+    if (e.key === '1' || e.key === ' ') grade(1); // Again
+    if (e.key === '2') grade(2); // Hard  
+    if (e.key === '3' || e.key === 'Enter') grade(3); // Good
+    if (e.key === '4') grade(4); // Easy
+  }
+});
+
+// Load decks on startup
+loadDecks();
+</script>
+</body>
+</html>
