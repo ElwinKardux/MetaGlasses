@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=640, initial-scale=1.0">
+<title>Meta Ray-Ban Vocab Lens</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #F5F0E6;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #3D2B1F;
+        user-select: none;
+    }
+
+    #app {
+        position: relative;
+        width: 640px;
+        height: 400px;
+        max-width: 100vw;
+        max-height: 100vh;
+        margin: 0 auto;
+        background: #F5F0E6;
+        overflow: hidden;
+    }
+
+    #video, #canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    #canvas {
+        display: none;
+        filter: brightness(0.9) sepia(0.1);
+    }
+
+    .overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: rgba(245, 240, 230, 0.96);
+        z-index: 10;
+        padding: 24px;
+    }
+
+    .hidden {
+        display: none !important;
+    }
+
+    .status-text {
+        font-size: 48px;
+        font-weight: 700;
+        text-align: center;
+        line-height: 1.3;
+        letter-spacing: 0.5px;
+        text-shadow: 0 2px 8px rgba(61, 43, 31, 0.1);
+    }
+
+    .hint {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 48px;
+        font-weight: 600;
+        color: #3D2B1F;
+        text-shadow: 0 2px 12px rgba(245, 240, 230, 0.8);
+        z-index: 5;
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    .results-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .result-item {
+        width: 100%;
+        text-align: center;
+        animation: slideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+    }
+
+    .result-item:nth-child(1) { animation-delay: 0.1s; }
+    .result-item:nth-child(2) { animation-delay: 0.2s; }
+    .result-item:nth-child(3) { animation-delay: 0.3s; }
+    .result-item:nth-child(4) { animation-delay: 0.4s; }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .zh {
+        font-size: 64px;
+        font-weight: 800;
+        line-height: 1.1;
+        margin-bottom: 4px;
+    }
+
+    .pinyin {
+        font-size: 48px;
+        font-style: italic;
+        font-weight: 400;
+        opacity: 0.85;
+        margin-bottom: 2px;
+    }
+
+    .en {
+        font-size: 48px;
+        font-weight: 500;
+        opacity: 0.7;
+    }
+
+    .speaker-icon {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 48px;
+        height: 48px;
+        z-index: 15;
+        animation: speaking 1.2s ease-in-out infinite;
+    }
+
+    @keyframes speaking {
+        0%, 100% { opacity: 0.4; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.1); }
+    }
+
+    .page-hint {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        font-size: 48px;
+        font-weight: 600;
+        color: #3D2B1F;
+        z-index: 15;
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    .loader {
+        width: 64px;
+        height: 64px;
+        border: 6px solid rgba(61, 43, 31, 0.2);
+        border-top-color: #3D2B1F;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 24px;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .top-badge {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        font-size: 48px;
+        font-weight: 600;
+        z-index: 5;
+        background: rgba(245, 240, 230, 0.9);
+        padding: 8px 16px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(61, 43, 31, 0.15);
+    }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+</head>
+<body>
+<div id="app">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    
+    <div id="loadingOverlay" class="overlay">
+        <div class="loader"></div>
+        <div class="status-text">Loading...</div>
+    </div>
+
+    <div id="errorOverlay" class="overlay hidden">
+        <div class="status-text" id="errorText">Enable camera in Meta View</div>
+    </div>
+
+    <div id="processingOverlay" class="overlay hidden">
+        <div class="loader"></div>
+        <div class="status-text">Processing...</div>
+    </div>
+
+    <div id="resultsOverlay" class="overlay hidden">
+        <svg class="speaker-icon hidden" id="speakerIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11 5L6 9H2V15H6L11 19V5Z" fill="#3D2B1F"/>
+            <path d="M15.54 8.46C16.4774 9.39764 17.0039 10.669 17.0039 11.995C17.0039 13.321 16.4774 14.5924 15.54 15.53" stroke="#3D2B1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M19.07 4.93C20.9447 6.80528 21.9998 9.34836 21.9998 12C21.9998 14.6516 20.9447 17.1947 19.07 19.07" stroke="#3D2B1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="results-container" id="resultsContainer"></div>
+        <div class="page-hint hidden" id="pageHint">Next 4 →</div>
+    </div>
+
+    <div id="captureHint" class="hint hidden">Pinch to 拍照</div>
+    <div id="topBadge" class="top-badge">Ready</div>
+</div>
+
+<script>
+    const CONFIG = {
+        WIDTH: 640,
+        HEIGHT: 400,
+        ITEMS_PER_PAGE: 4,
+        TTS_PAUSE_MS: 800,
+        CONFIDENCE_THRESHOLD: 0.6
+    };
+
+    const VOCAB_DICT = {
+        'person': { zh: '人', pinyin: 'rén' },
+        'bicycle': { zh: '自行车', pinyin: 'zì xíng chē' },
+        'car': { zh: '汽车', pinyin: 'qì chē' },
+        'motorcycle': { zh: '摩托车', pinyin: 'mó tuō chē' },
+        'airplane': { zh: '飞机', pinyin: 'fēi jī' },
+        'bus': { zh: '公交车', pinyin: 'gōng jiāo chē' },
+        'train': { zh: '火车', pinyin: 'huǒ chē' },
+        'truck': { zh: '卡车', pinyin: 'kǎ chē' },
+        'boat': { zh: '船', pinyin: 'chuán' },
+        'traffic light': { zh: '红绿灯', pinyin: 'hóng lǜ dēng' },
+        'fire hydrant': { zh: '消防栓', pinyin: 'xiāo fáng shuān' },
+        'stop sign': { zh: '停车标志', pinyin: 'tíng chē biāo zhì' },
+        'parking meter': { zh: '停车计时器', pinyin: 'tíng chē jì shí qì' },
+        'bench': { zh: '长椅', pinyin: 'cháng yǐ' },
+        'bird': { zh: '鸟', pinyin: 'niǎo' },
+        'cat': { zh: '猫', pinyin: 'māo' },
+        'dog': { zh: '狗', pinyin: 'gǒu' },
+        'horse': { zh: '马', pinyin: 'mǎ' },
+        'sheep': { zh: '羊', pinyin: 'yáng' },
+        'cow': { zh: '牛', pinyin: 'niú' },
+        'elephant': { zh: '大象', pinyin: 'dà xiàng' },
+        'bear': { zh: '熊', pinyin: 'xióng' },
+        'zebra': { zh: '斑马', pinyin: 'bān mǎ' },
+        'giraffe': { zh: '长颈鹿', pinyin: 'cháng jǐng lù' },
+        'backpack': { zh: '背包', pinyin: 'bèi bāo' },
+        'umbrella': { zh: '雨伞', pinyin: 'yǔ sǎn' },
+        'handbag': { zh: '手提包', pinyin: 'shǒu tí bāo' },
+        'tie': { zh: '领带', pinyin: 'lǐng dài' },
+        'suitcase': { zh: '行李箱', pinyin: 'xíng lǐ xiāng' },
+        'frisbee': { zh: '飞盘', pinyin: 'fēi pán' },
+        'skis': { zh: '滑雪板', pinyin: 'huá xuě bǎn' },
+        'snowboard': { zh: '滑雪板', pinyin: 'huá xuě bǎn' },
+        'sports ball': { zh: '球', pinyin: 'qiú' },
+        'kite': { zh: '风筝', pinyin: 'fēng zheng' },
+        'baseball bat': { zh: '棒球棒', pinyin: 'bàng qiú bàng' },
+        'baseball glove': { zh: '棒球手套', pinyin: 'bàng qiú shǒu tào' },
+        'skateboard': { zh: '滑板', pinyin: 'huá bǎn' },
+        'surfboard': { zh: '冲浪板', pinyin: 'chōng làng bǎn' },
+        'tennis racket': { zh: '网球拍', pinyin: 'wǎng qiú pāi' },
+        'bottle': { zh: '瓶子', pinyin: 'píng zi' },
+        'wine glass': { zh: '酒杯', pinyin: 'jiǔ bēi' },
+        'cup': { zh: '杯子', pinyin: 'bēi zi' },
+        'fork': { zh: '叉子', pinyin: 'chā zi' },
+        'knife': { zh: '刀', pinyin: 'dāo' },
+        'spoon': { zh: '勺子', pinyin: 'sháo zi' },
+        'bowl': { zh: '碗', pinyin: 'wǎn' },
+        'banana': { zh: '香蕉', pinyin: 'xiāng jiāo' },
+        'apple': { zh: '苹果', pinyin: 'píng guǒ' },
+        'sandwich': { zh: '三明治', pinyin: 'sān míng zhì' },
+        'orange': { zh: '橙子', pinyin: 'chéng zi' },
+        'broccoli': { zh: '西兰花', pinyin: 'xī lán huā' },
+        'carrot': { zh: '胡萝卜', pinyin: 'hú luó bo' },
+        'hot dog': { zh: '热狗', pinyin: 'rè gǒu' },
+        'pizza': { zh: '披萨', pinyin: 'pī sà' },
+        'donut': { zh: '甜甜圈', pinyin: 'tián tián quān' },
+        'cake': { zh: '蛋糕', pinyin: 'dàn gāo' },
+        'chair': { zh: '椅子', pinyin: 'yǐ zi' },
+        'couch': { zh: '沙发', pinyin: 'shā fā' },
+        'potted plant': { zh: '植物', pinyin: 'zhí wù' },
+        'bed': { zh: '床', pinyin: 'chuáng' },
+        'dining table': { zh: '餐桌', pinyin: 'cān zhuō' },
+        'toilet': { zh: '马桶', pinyin: 'mǎ tǒng' },
+        'tv': { zh: '电视', pinyin: 'diàn shì' },
+        'laptop': { zh: '电脑', pinyin: 'diàn nǎo' },
+        'mouse': { zh: '鼠标', pinyin: 'shǔ biāo' },
+        'remote': { zh: '遥控器', pinyin: 'yáo kòng qì' },
+        'keyboard': { zh: '键盘', pinyin: 'jiàn pán' },
+        'cell phone': { zh: '手机', pinyin: 'shǒu jī' },
+        'microwave': { zh: '微波炉', pinyin: 'wēi bō lú' },
+        'oven': { zh: '烤箱', pinyin: 'kǎo xiāng' },
+        'toaster': { zh: '烤面包机', pinyin: 'kǎo miàn bāo jī' },
+        'sink': { zh: '水槽', pinyin: 'shuǐ cáo' },
+        'refrigerator': { zh: '冰箱', pinyin: 'bīng xiāng' },
+        'book': { zh: '书', pinyin: 'shū' },
+        'clock': { zh: '时钟', pinyin: 'shí zhōng' },
+        'vase': { zh: '花瓶', pinyin: 'huā píng' },
+        'scissors': { zh: '剪刀', pinyin: 'jiǎn dāo' },
+        'teddy bear': { zh: '泰迪熊', pinyin: 'tài dí xióng' },
+        'hair drier': { zh: '吹风机', pinyin: 'chuī fēng jī' },
+        'toothbrush': { zh: '牙刷', pinyin: 'yá shuā' }
+    };
+
+    class VocabLens {
+        constructor() {
+            this.video = document.getElementById('video');
+            this.canvas = document.getElementById('canvas');
+            this.ctx = this.canvas.getContext('2d');
+            this.stream = null;
+            this.model = null;
+            this.state = 'loading'; // loading, live, processing, results
+            this.detections = [];
+            this.currentPage = 0;
+            this.isStreaming = false;
+            this.ttsQueue = [];
+            this.isSpeaking = false;
+
+            this.init();
+        }
+
+        async init() {
+            this.setupEventListeners();
+            await this.loadModel();
+            await this.startCamera();
+        }
+
+        setupEventListeners() {
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.handleEnter();
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    this.handleNextPage();
+                }
+            });
+        }
+
+        async loadModel() {
+            try {
+                this.model = await cocoSsd.load();
+                this.updateBadge('Model Ready');
+            } catch (err) {
+                console.error('Model load failed:', err);
+                this.showError('No internet - detection offline');
+            }
+        }
+
+        async startCamera() {
+            try {
+                this.stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: CONFIG.WIDTH },
+                        height: { ideal: CONFIG.HEIGHT }
+                    },
+                    audio: false
+                });
+                
+                this.video.srcObject = this.stream;
+                await this.video.play();
+                
+                this.canvas.width = CONFIG.WIDTH;
+                this.canvas.height = CONFIG.HEIGHT;
+                
+                this.hideOverlay('loadingOverlay');
+                this.showHint();
+                this.updateBadge('Ready');
+                this.state = 'live';
+                this.isStreaming = true;
+                this.renderLoop();
+            } catch (err) {
+                console.error('Camera failed:', err);
+                this.hideOverlay('loadingOverlay');
+                this.showError('Enable camera in Meta View');
+            }
+        }
+
+        renderLoop() {
+            if (!this.isStreaming) return;
+            requestAnimationFrame(() => this.renderLoop());
+        }
+
+        async handleEnter() {
+            if (this.state === 'live') {
+                await this.captureAndDetect();
+            } else if (this.state === 'results') {
+                this.backToLive();
+            }
+        }
+
+        async captureAndDetect() {
+            if (!this.model || this.state !== 'live') return;
+
+            this.state = 'processing';
+            this.stopTTS();
+            this.hideHint();
+            this.updateBadge('Processing');
+            this.showOverlay('processingOverlay');
+            
+            // Stop video track to save battery during processing
+            this.isStreaming = false;
+            if (this.stream) {
+                this.stream.getVideoTracks().forEach(track => track.enabled = false);
+            }
+
+            // Capture frame
+            this.ctx.drawImage(this.video, 0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+            this.canvas.style.display = 'block';
+            this.video.style.display = 'none';
+
+            try {
+                const predictions = await this.model.detect(this.canvas);
+                this.processDetections(predictions);
+            } catch (err) {
+                console.error('Detection failed:', err);
+                this.detections = [];
+            }
+
+            this.hideOverlay('processingOverlay');
+            this.showResults();
+        }
+
+        processDetections(predictions) {
+            // Filter by confidence and dedupe
+            const filtered = predictions
+                .filter(p => p.score >= CONFIG.CONFIDENCE_THRESHOLD)
+                .map(p => ({
+                    class: p.class,
+                    score: p.score,
+                    vocab: VOCAB_DICT[p.class] || null
+                }))
+                .filter((item, idx, arr) => 
+                    arr.findIndex(t => t.class === item.class) === idx
+                )
+                .sort((a, b) => b.score - a.score);
+
+            this.detections = filtered;
+            this.currentPage = 0;
+        }
+
+        showResults() {
+            this.state = 'results';
+            
+            if (this.detections.length === 0) {
+                this.renderNoResults();
+            } else {
+                this.renderResultsPage();
+                this.speakResults();
+            }
+
+            this.showOverlay('resultsOverlay');
+            this.updateBadge(`${this.detections.length} found`);
+        }
+
+        renderResultsPage() {
+            const container = document.getElementById('resultsContainer');
+            const pageHint = document.getElementById('pageHint');
+            
+            container.innerHTML = '';
+            
+            const start = this.currentPage * CONFIG.ITEMS_PER_PAGE;
+            const end = start + CONFIG.ITEMS_PER_PAGE;
+            const pageItems = this.detections.slice(start, end);
+
+            pageItems.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'result-item';
+                
+                if (item.vocab) {
+                    div.innerHTML = `
+                        <div class="zh">${item.vocab.zh}</div>
+                        <div class="pinyin">${item.vocab.pinyin}</div>
+                        <div class="en">— ${item.class}</div>
+                    `;
+                } else {
+                    div.innerHTML = `
+                        <div class="zh">${item.class}</div>
+                        <div class="en">No 中文</div>
+                    `;
+                }
+                container.appendChild(div);
+            });
+
+            // Show page hint if more items
+            if (end < this.detections.length) {
+                pageHint.classList.remove('hidden');
+            } else {
+                pageHint.classList.add('hidden');
+            }
+        }
+
+        renderNoResults() {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `
+                <div class="result-item">
+                    <div class="zh">未检测到物体</div>
+                    <div class="en">— No objects</div>
+                </div>
+            `;
+            document.getElementById('pageHint').classList.add('hidden');
+        }
+
+        handleNextPage() {
+            if (this.state !== 'results') return;
+            
+            const maxPage = Math.ceil(this.detections.length / CONFIG.ITEMS_PER_PAGE) - 1;
+            if (this.currentPage < maxPage) {
+                this.currentPage++;
+                this.stopTTS();
+                this.renderResultsPage();
+                this.speakResults();
+            }
+        }
+
+        speakResults() {
+            const start = this.currentPage * CONFIG.ITEMS_PER_PAGE;
+            const end = start + CONFIG.ITEMS_PER_PAGE;
+            const pageItems = this.detections.slice(start, end);
+            
+            this.ttsQueue = pageItems
+                .filter(item => item.vocab)
+                .map(item => item.vocab.zh);
+
+            if (this.ttsQueue.length > 0) {
+                document.getElementById('speakerIcon').classList.remove('hidden');
+                this.processTTSQueue();
+            } else {
+                document.getElementById('speakerIcon').classList.add('hidden');
+            }
+        }
+
+        processTTSQueue() {
+            if (this.ttsQueue.length === 0 || this.isSpeaking) {
+                document.getElementById('speakerIcon').classList.add('hidden');
+                return;
+            }
+
+            this.isSpeaking = true;
+            const text = this.ttsQueue.shift();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-CN';
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+            
+            utterance.onend = () => {
+                this.isSpeaking = false;
+                setTimeout(() => this.processTTSQueue(), CONFIG.TTS_PAUSE_MS);
+            };
+            
+            utterance.onerror = () => {
+                this.isSpeaking = false;
+                this.processTTSQueue();
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        stopTTS() {
+            window.speechSynthesis.cancel();
+            this.ttsQueue = [];
+            this.isSpeaking = false;
+            document.getElementById('speakerIcon').classList.add('hidden');
+        }
+
+        backToLive() {
+            this.state = 'live';
+            this.stopTTS();
+            this.hideOverlay('resultsOverlay');
+            this.canvas.style.display = 'none';
+            this.video.style.display = 'block';
+            
+            // Resume video track
+            if (this.stream) {
+                this.stream.getVideoTracks().forEach(track => track.enabled = true);
+            }
+            
+            this.isStreaming = true;
+            this.renderLoop();
+            this.showHint();
+            this.updateBadge('Ready');
+        }
+
+        showOverlay(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        hideOverlay(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        showHint() {
+            document.getElementById('captureHint').classList.remove('hidden');
+        }
+
+        hideHint() {
+            document.getElementById('captureHint').classList.add('hidden');
+        }
+
+        updateBadge(text) {
+            document.getElementById('topBadge').textContent = text;
+        }
+
+        showError(message) {
+            document.getElementById('errorText').textContent = message;
+            this.showOverlay('errorOverlay');
+            this.updateBadge('Error');
+        }
+    }
+
+    // Init app when DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => new VocabLens());
+    } else {
+        new VocabLens();
+    }
+</script>
+<script>(function(){document.addEventListener("click",function(e){var a=e.target.closest("[data-product-id]");if(!a)return;e.preventDefault();var pid=a.getAttribute("data-product-id");if(pid)parent.postMessage({type:"ecto-artifact-link-click",productId:pid},"*")})})();</script>
+</body>
+</html>
